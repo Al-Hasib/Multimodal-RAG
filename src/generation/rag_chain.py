@@ -29,6 +29,7 @@ class RAGChain:
             "guardrail_output": None,
             "blocked": False,
             "block_reason": None,
+            "guardrail_retries": 0,
         }
 
     def invoke(self, question: str, chat_history: Optional[list] = None, session_id: Optional[str] = None) -> str:

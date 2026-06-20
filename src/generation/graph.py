@@ -26,6 +26,7 @@ class RAGState(TypedDict):
     guardrail_output: Optional[dict]
     blocked: bool
     block_reason: Optional[str]
+    guardrail_retries: int
 
 
 def create_rag_graph(retriever: MultiModalRetriever):
@@ -110,11 +111,12 @@ def create_rag_graph(retriever: MultiModalRetriever):
         if not result.passed and result.action.value == "block":
             logger.warning(f"Output guardrail blocked: {result.reason}")
             safe = "I'm sorry, but I couldn't generate a suitable answer for that question."
-            return {
-                "guardrail_output": {"passed": False, "reason": result.reason, "action": result.action.value},
-                "response": safe,
-                "blocked": True,
-            }
+        return {
+            "guardrail_output": {"passed": False, "reason": result.reason, "action": result.action.value},
+            "response": safe,
+            "blocked": True,
+            "guardrail_retries": state.get("guardrail_retries", 0) + 1,
+        }
 
         return {
             "guardrail_output": {"passed": True, "flags": result.details.get("flags", [])},
@@ -131,7 +133,8 @@ def create_rag_graph(retriever: MultiModalRetriever):
         return "check_output_guardrail"
 
     def route_after_output_guardrail(state: RAGState) -> Literal["generate", END]:
-        if state.get("blocked"):
+        retries = state.get("guardrail_retries", 0)
+        if state.get("blocked") and state.get("guardrail_output", {}).get("passed") is False and retries < 2:
             return "generate"
         return END
 

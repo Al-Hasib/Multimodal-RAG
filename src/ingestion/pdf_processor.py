@@ -1,3 +1,4 @@
+import aiofiles
 from unstructured.partition.pdf import partition_pdf
 from src.config.settings import settings
 from src.models.schemas import ExtractedDocument, ExtractedElement, DocumentType
@@ -18,7 +19,7 @@ class PDFProcessor:
         self.combine_text_under_n_chars = settings.pdf_combine_text_under_n_chars
         self.new_after_n_chars = settings.pdf_new_after_n_chars
 
-    def extract(self, file_path: str, image_output_dir: Optional[str] = None) -> ExtractedDocument:
+    async def extract(self, file_path: str, image_output_dir: Optional[str] = None) -> ExtractedDocument:
         logger.info(f"Extracting elements from: {file_path}")
 
         chunks = partition_pdf(

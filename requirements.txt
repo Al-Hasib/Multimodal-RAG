@@ -7,6 +7,7 @@ python-dotenv>=1.0
 unstructured[all-docs]>=0.10
 pillow>=10.0
 lxml>=5.0
+aiofiles>=24.0
 
 # Vector store & embeddings
 qdrant-client>=1.13
@@ -19,6 +20,7 @@ langchain-community>=0.3
 langchain-openai>=0.3
 langchain-groq>=0.3
 langchain-core>=0.3
+langchain-huggingface>=0.1
 langgraph>=0.3
 langgraph-checkpoint>=2.0
 
@@ -32,8 +34,20 @@ asyncpg>=0.30
 
 # API
 fastapi>=0.115
-uvicorn>=0.34
+uvicorn[standard]>=0.34
 python-multipart>=0.0.20
+gunicorn>=23.0
 
 # Web UI
 streamlit>=1.42
+
+# Observability
+langfuse>=2.59
+python-json-logger>=3.0
+
+# Caching
+cachetools>=5.5
+
+# Evaluation
+ragas>=0.2
+datasets>=3.0

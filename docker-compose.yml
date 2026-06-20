@@ -10,6 +10,11 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   redis:
     image: redis:7-alpine
@@ -19,6 +24,11 @@ services:
     volumes:
       - redis_data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   postgres:
     image: postgres:16-alpine
@@ -32,9 +42,16 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   multimodal-rag:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: multimodal-rag
     ports:
       - "8000:8000"
@@ -47,11 +64,37 @@ services:
     volumes:
       - ./src:/app/src
     depends_on:
-      - qdrant
-      - redis
-      - postgres
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
-    command: uvicorn src.api.app:create_app --host 0.0.0.0 --port 8000 --reload --factory
+    command: uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --reload
+
+  multimodal-rag-prod:
+    profiles: ["prod"]
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: multimodal-rag-prod
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - REDIS_URL=redis://redis:6379/0
+      - POSTGRES_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/multimodal_rag
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   qdrant_data:

@@ -10,9 +10,18 @@ class Settings(BaseSettings):
     langchain_endpoint: str = "https://api.smith.langchain.com"
     langchain_project: str = "multimodal-rag"
 
+    langfuse_public_key: Optional[str] = None
+    langfuse_secret_key: Optional[str] = None
+    langfuse_host: str = "https://cloud.langfuse.com"
+    langfuse_enabled: bool = False
+
     openai_embedding_model: str = "text-embedding-3-small"
     openai_chat_model: str = "gpt-4o-mini"
     groq_chat_model: str = "llama-3.1-8b-instant"
+
+    embedding_provider: str = "openai"
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536
 
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: Optional[str] = None
@@ -23,6 +32,8 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
     redis_docstore_ttl: int = 86400
+    redis_cache_ttl: int = 3600
+    redis_cache_enabled: bool = True
 
     postgres_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/multimodal_rag"
     postgres_pool_size: int = 10
@@ -44,6 +55,12 @@ class Settings(BaseSettings):
     rerank_top_k: int = 5
     query_transformer_enabled: bool = True
     query_transformer_method: str = "hyde"
+
+    log_level: str = "INFO"
+    log_format: str = "json"
+
+    prompt_use_langfuse: bool = False
+    prompt_default_version: int = 1
 
     model_config = {"env_prefix": "", "case_sensitive": False, "env_file": ".env", "extra": "ignore"}
 

@@ -1,0 +1,14 @@
+[
+    {
+        "question": "What is the Transformer architecture?",
+        "ground_truth": "The Transformer is a neural network architecture based solely on attention mechanisms, dispensing with recurrence and convolutions."
+    },
+    {
+        "question": "What is multi-head attention?",
+        "ground_truth": "Multi-head attention linearly projects queries, keys, and values h times with different learned projections, performs attention in parallel, and concatenates the results."
+    },
+    {
+        "question": "Who are the authors of the Attention Is All You Need paper?",
+        "ground_truth": "Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Łukasz Kaiser, and Illia Polosukhin."
+    }
+]

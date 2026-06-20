@@ -76,8 +76,10 @@ prompt versioning (LangFuse), streaming, chat history (PostgreSQL), Redis cachin
 | **Input Guardrails** | Prompt injection detection (regex + LLM), toxicity check, PII scan, topic relevance |
 | **Output Guardrails** | Hallucination detection (factual grounding), answer relevance, output toxicity check |
 | **LangFuse Integration** | Guardrail violations logged as LangFuse traces for audit |
-| **API Key Auth** | Bearer token authentication via `Authorization` header |
+| **User Management** | Register/login/session via JWT tokens + bcrypt password hashing |
+| **API Key Auth** | Fallback static API key auth when `API_KEYS` is set |
 | **Rate Limiting** | Configurable per-endpoint rate limits via `slowapi` |
+| **User Isolation** | Every user sees only their own documents, chats, and feedback |
 | **Feedback Loop** | Thumbs up/down per answer, stored in PostgreSQL |
 | **Background Jobs** | Async ingestion via `arq` Redis task queue for files > 10 MB |
 | **Prometheus Metrics** | `/metrics` endpoint for QPS, latency, error rate |
@@ -134,29 +136,39 @@ python -m src.main evaluate scripts/test_set_example.json
 ### API Usage
 
 ```bash
-# All requests can optionally include an API key
-AUTH="-H 'Authorization: Bearer sk-your-key'"
+# Register a new user
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "secret123", "name": "Alice"}' \
+  http://localhost:8000/auth/register
+
+# Login
+TOKEN=$(curl -s -X POST -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "secret123"}' \
+  http://localhost:8000/auth/login | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# Use token for authenticated requests
+AUTH="-H 'Authorization: Bearer $TOKEN'"
+
+# Get current user
+curl $AUTH http://localhost:8000/auth/me
 
 # Ingest (PDF, image, DOCX, HTML, audio)
 curl -X POST $AUTH -F "file=@paper.pdf" http://localhost:8000/ingest
-curl -X POST -F "file=@diagram.png" http://localhost:8000/ingest
-curl -X POST -F "file=@report.docx" http://localhost:8000/ingest
-curl -X POST -F "file=@meeting.mp3" http://localhost:8000/ingest
 
 # Ingest from URL
-curl -X POST "http://localhost:8000/ingest/url?url=https://example.com/article.html"
+curl -X POST $AUTH "http://localhost:8000/ingest/url?url=https://example.com/article.html"
 
-# List documents
-curl http://localhost:8000/documents
+# List documents (user-scoped)
+curl $AUTH http://localhost:8000/documents
 
 # Get document details
-curl http://localhost:8000/documents/1
+curl $AUTH http://localhost:8000/documents/1
 
 # Delete a document
-curl -X DELETE http://localhost:8000/documents/1
+curl -X DELETE $AUTH http://localhost:8000/documents/1
 
 # Re-index all
-curl -X POST http://localhost:8000/reindex
+curl -X POST $AUTH http://localhost:8000/reindex
 
 # Query
 curl -X POST $AUTH -H "Content-Type: application/json" \
@@ -218,6 +230,10 @@ All settings via `.env`:
 | `CORS_ORIGINS` | `*` | Allowed CORS origins (comma-separated) |
 | `REQUEST_TIMEOUT_SECONDS` | `120` | Per-request timeout |
 | `ARQ_REDIS_URL` | `redis://localhost:6379/1` | Redis URL for task queue |
+| `JWT_SECRET` | `change-me-in-production` | Secret key for JWT signing |
+| `JWT_ALGORITHM` | `HS256` | JWT signing algorithm |
+| `JWT_ACCESS_TOKEN_EXPIRE_SECONDS` | `3600` | Access token TTL (1h) |
+| `JWT_REFRESH_TOKEN_EXPIRE_SECONDS` | `2592000` | Refresh token TTL (30d) |
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `LOG_FORMAT` | `json` | `json` or `text` |
 
@@ -235,6 +251,7 @@ src/
 ├── storage/         # Redis-backed docstore
 ├── chat/            # PostgreSQL chat history + feedback
 ├── pipeline/        # Pipeline orchestrator
+├── auth/            # User model, JWT helpers, auth dependency
 ├── api/             # FastAPI, arq worker
 ├── ui/              # Streamlit web app
 └── main.py          # CLI entry point

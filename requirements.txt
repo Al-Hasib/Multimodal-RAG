@@ -62,6 +62,11 @@ arq>=0.26
 # Database migrations
 alembic>=1.14
 
+# Auth
+passlib[bcrypt]>=1.7
+pyjwt>=2.9
+python-jose[cryptography]>=3.3
+
 # Evaluation
 ragas>=0.2
 datasets>=3.0

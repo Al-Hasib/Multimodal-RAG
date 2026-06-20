@@ -84,6 +84,11 @@ class Settings(BaseSettings):
     arq_redis_url: str = "redis://localhost:6379/1"
     arq_queue_name: str = "ingestion"
 
+    jwt_secret: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_seconds: int = 3600
+    jwt_refresh_token_expire_seconds: int = 2592000
+
     model_config = {"env_prefix": "", "case_sensitive": False, "env_file": ".env", "extra": "ignore"}
 
 

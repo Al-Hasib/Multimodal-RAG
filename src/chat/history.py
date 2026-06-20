@@ -2,9 +2,9 @@ from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, Text, DateTime, Integer, JSON, select
+from sqlalchemy import String, Text, DateTime, Integer, JSON, select, delete as sa_delete, func
 from src.config.settings import settings
-import json
+from src.models.schemas import DocumentInfo
 import logging
 
 logger = logging.getLogger(__name__)
@@ -30,6 +30,7 @@ class DocumentRecord(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     filename: Mapped[str] = mapped_column(String(256), nullable=False)
+    file_format: Mapped[str] = mapped_column(String(32), default="pdf")
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
     num_texts: Mapped[int] = mapped_column(Integer, default=0)
     num_tables: Mapped[int] = mapped_column(Integer, default=0)
@@ -74,17 +75,73 @@ class ChatHistoryManager:
                 for m in reversed(messages)
             ]
 
-    async def record_document(self, filename: str, file_path: str, stats: dict):
+    async def record_document(self, filename: str, file_path: str, file_format: str, stats: dict) -> int:
         async with self.async_session() as session:
             doc = DocumentRecord(
                 filename=filename,
                 file_path=file_path,
+                file_format=file_format,
                 num_texts=stats.get("texts", 0),
                 num_tables=stats.get("tables", 0),
                 num_images=stats.get("images", 0),
             )
             session.add(doc)
             await session.commit()
+            await session.refresh(doc)
+            return doc.id
+
+    async def list_documents(self, skip: int = 0, limit: int = 50) -> tuple[list[DocumentInfo], int]:
+        async with self.async_session() as session:
+            count_stmt = select(func.count()).select_from(DocumentRecord)
+            total = (await session.execute(count_stmt)).scalar() or 0
+
+            stmt = select(DocumentRecord).order_by(DocumentRecord.created_at.desc()).offset(skip).limit(limit)
+            result = await session.execute(stmt)
+            docs = result.scalars().all()
+            return [
+                DocumentInfo(
+                    id=d.id,
+                    filename=d.filename,
+                    file_format=d.file_format,
+                    file_path=d.file_path,
+                    num_texts=d.num_texts,
+                    num_tables=d.num_tables,
+                    num_images=d.num_images,
+                    status=d.status,
+                    created_at=d.created_at,
+                )
+                for d in docs
+            ], total
+
+    async def get_document(self, doc_id: int) -> Optional[DocumentInfo]:
+        async with self.async_session() as session:
+            stmt = select(DocumentRecord).where(DocumentRecord.id == doc_id)
+            result = await session.execute(stmt)
+            d = result.scalar_one_or_none()
+            if not d:
+                return None
+            return DocumentInfo(
+                id=d.id,
+                filename=d.filename,
+                file_format=d.file_format,
+                file_path=d.file_path,
+                num_texts=d.num_texts,
+                num_tables=d.num_tables,
+                num_images=d.num_images,
+                status=d.status,
+                created_at=d.created_at,
+            )
+
+    async def delete_document_record(self, doc_id: int) -> bool:
+        async with self.async_session() as session:
+            stmt = select(DocumentRecord).where(DocumentRecord.id == doc_id)
+            result = await session.execute(stmt)
+            d = result.scalar_one_or_none()
+            if not d:
+                return False
+            await session.delete(d)
+            await session.commit()
+            return True
 
     async def close(self):
         await self.engine.dispose()

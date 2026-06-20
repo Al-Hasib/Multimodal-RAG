@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, Field
 from typing import Any
@@ -9,6 +10,15 @@ class DocumentType(str, Enum):
     IMAGE = "image"
 
 
+class FileFormat(str, Enum):
+    PDF = "pdf"
+    IMAGE = "image"
+    DOCX = "docx"
+    HTML = "html"
+    URL = "url"
+    UNKNOWN = "unknown"
+
+
 class ExtractedElement(BaseModel):
     type: DocumentType
     content: Any
@@ -18,6 +28,7 @@ class ExtractedElement(BaseModel):
 
 class ExtractedDocument(BaseModel):
     filename: str
+    file_format: FileFormat = FileFormat.PDF
     texts: list[ExtractedElement] = Field(default_factory=list)
     tables: list[ExtractedElement] = Field(default_factory=list)
     images: list[ExtractedElement] = Field(default_factory=list)
@@ -44,3 +55,20 @@ class QueryResponse(BaseModel):
     answer: str
     context_texts: list[str] = Field(default_factory=list)
     context_images: list[str] = Field(default_factory=list)
+
+
+class DocumentInfo(BaseModel):
+    id: int
+    filename: str
+    file_format: str
+    file_path: str
+    num_texts: int = 0
+    num_tables: int = 0
+    num_images: int = 0
+    status: str = "processed"
+    created_at: datetime | None = None
+
+
+class DocumentList(BaseModel):
+    documents: list[DocumentInfo]
+    total: int

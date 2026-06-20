@@ -3,7 +3,7 @@ import logging
 import aiofiles
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from src.models.schemas import QueryRequest, QueryResponse
+from src.models.schemas import QueryRequest, QueryResponse, DocumentList, DocumentInfo
 from src.pipeline.pipeline import RAGPipeline
 from src.config.settings import settings
 from contextlib import asynccontextmanager
@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 logger = logging.getLogger(__name__)
 
 _pipeline: RAGPipeline | None = None
+SUPPORTED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp", ".docx", ".doc", ".html", ".htm", ".xhtml"}
 
 
 @asynccontextmanager
@@ -44,16 +45,19 @@ def get_pipeline() -> RAGPipeline:
     return _pipeline
 
 
-app = FastAPI(title="Multimodal RAG API", version="3.0.0", lifespan=lifespan)
+app = FastAPI(title="Multimodal RAG API", version="3.1.0", lifespan=lifespan)
 
 
 def create_app() -> FastAPI:
     return app
 
 
+# ── Health ──────────────────────────────────────────────────────────
+
+
 @app.get("/health")
 async def health():
-    checks = {"status": "ok", "version": "3.0.0"}
+    checks = {"status": "ok", "version": "3.1.0"}
     try:
         from redis import Redis as RedisClient
         r = RedisClient.from_url(settings.redis_url)
@@ -69,24 +73,87 @@ async def health():
         checks["qdrant"] = "ok"
     except Exception as e:
         checks["qdrant"] = f"error: {e}"
+    try:
+        from asyncpg import connect
+        checks["postgres"] = "ok"
+    except Exception as e:
+        checks["postgres"] = f"error: {e}"
     checks["langfuse"] = "configured" if settings.langfuse_enabled else "disabled"
     return checks
 
 
-@app.post("/ingest", summary="Ingest a PDF document")
+# ── Ingestion (multi-format) ────────────────────────────────────────
+
+
+@app.post("/ingest", summary="Ingest a document (PDF, image, DOCX, HTML)")
 async def ingest(file: UploadFile = File(...)):
-    if not file.filename or not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+
+    ext = "." + file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    if ext not in SUPPORTED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported format '{ext}'. Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}",
+        )
+
     content = await file.read()
-    temp_path = f"/tmp/{file.filename}"
-    async with aiofiles.open(temp_path, "wb") as f:
-        await f.write(content)
     try:
         pipe = get_pipeline()
-        result = await pipe.ingest(temp_path)
+        result = await pipe.ingest_file(file.filename, content)
         return {"message": f"Ingested {file.filename}", "status": "success", **result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ingest/url", summary="Ingest a document from URL")
+async def ingest_url(url: str = Query(..., description="URL to ingest")):
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Invalid URL")
+    try:
+        pipe = get_pipeline()
+        result = await pipe.ingest(url, file_format=None)
+        return {"message": f"Ingested {url}", "status": "success", **result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Document Management ─────────────────────────────────────────────
+
+
+@app.get("/documents", response_model=DocumentList, summary="List all ingested documents")
+async def list_documents(skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200)):
+    pipe = get_pipeline()
+    docs, total = await pipe.list_documents(skip=skip, limit=limit)
+    return DocumentList(documents=docs, total=total)
+
+
+@app.get("/documents/{doc_id}", response_model=DocumentInfo, summary="Get document details")
+async def get_document(doc_id: int):
+    pipe = get_pipeline()
+    doc = await pipe.get_document(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return doc
+
+
+@app.delete("/documents/{doc_id}", summary="Delete a document")
+async def delete_document(doc_id: int):
+    pipe = get_pipeline()
+    ok = await pipe.delete_document(doc_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"message": f"Document {doc_id} deleted", "status": "success"}
+
+
+@app.post("/reindex", summary="Re-index all documents from scratch")
+async def reindex():
+    pipe = get_pipeline()
+    count = await pipe.reindex_all()
+    return {"message": f"Re-indexed {count} documents", "status": "success"}
+
+
+# ── Query ───────────────────────────────────────────────────────────
 
 
 @app.post("/query", response_model=QueryResponse, summary="Ask a question")

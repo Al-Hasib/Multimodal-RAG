@@ -48,3 +48,15 @@ class QueryCache:
             return
         key = self._make_key(question, k)
         self.client.delete(key)
+
+    def invalidate_all(self) -> None:
+        if not self.enabled or not self.client:
+            return
+        cursor = 0
+        while True:
+            cursor, keys = self.client.scan(cursor=cursor, match="cache:query:*", count=100)
+            if keys:
+                self.client.delete(*keys)
+            if cursor == 0:
+                break
+        logger.info("All query caches invalidated")

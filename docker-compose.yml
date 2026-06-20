@@ -71,7 +71,29 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
-    command: uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn src.api.app:app --host 0.0.0.0 --port 8000 --reload --timeout-graceful-shutdown 30
+
+  multimodal-rag-worker:
+    profiles: ["prod"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: multimodal-rag-worker
+    env_file:
+      - .env
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - REDIS_URL=redis://redis:6379/0
+      - POSTGRES_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/multimodal_rag
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    command: arq src.api.worker.WorkerSettings
 
   multimodal-rag-prod:
     profiles: ["prod"]

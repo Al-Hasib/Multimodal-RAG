@@ -76,6 +76,14 @@ class Settings(BaseSettings):
     audio_chunk_seconds: int = 300
     audio_max_file_size_mb: int = 200
 
+    api_keys: list[str] = []
+    rate_limit: str = "10/minute"
+    cors_origins: str = "*"
+    request_timeout_seconds: int = 120
+
+    arq_redis_url: str = "redis://localhost:6379/1"
+    arq_queue_name: str = "ingestion"
+
     model_config = {"env_prefix": "", "case_sensitive": False, "env_file": ".env", "extra": "ignore"}
 
 

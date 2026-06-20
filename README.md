@@ -76,6 +76,18 @@ prompt versioning (LangFuse), streaming, chat history (PostgreSQL), Redis cachin
 | **Input Guardrails** | Prompt injection detection (regex + LLM), toxicity check, PII scan, topic relevance |
 | **Output Guardrails** | Hallucination detection (factual grounding), answer relevance, output toxicity check |
 | **LangFuse Integration** | Guardrail violations logged as LangFuse traces for audit |
+| **API Key Auth** | Bearer token authentication via `Authorization` header |
+| **Rate Limiting** | Configurable per-endpoint rate limits via `slowapi` |
+| **Feedback Loop** | Thumbs up/down per answer, stored in PostgreSQL |
+| **Background Jobs** | Async ingestion via `arq` Redis task queue for files > 10 MB |
+| **Prometheus Metrics** | `/metrics` endpoint for QPS, latency, error rate |
+| **Structured Errors** | Consistent `{code, message}` error responses |
+| **Request ID Tracing** | `X-Request-ID` header on every response |
+| **CORS** | Configurable cross-origin support |
+| **Database Migrations** | Alembic-managed PostgreSQL schema evolution |
+| **CI Pipeline** | GitHub Actions (lint, test, docker build) |
+| **Per-format Chunking** | Different chunk strategies for PDF, DOCX, HTML, audio, images |
+| **Retry with Backoff** | Tenacity retry on Qdrant operations |
 
 ## Quick Start
 
@@ -88,9 +100,10 @@ docker compose up --build
 | Service | Port | Description |
 |---------|------|-------------|
 | `multimodal-rag` | 8000 | FastAPI (hot-reload) |
+| `multimodal-rag-worker` | — | arq background job worker (prod only) |
 | `qdrant` | 6333 | Vector database |
 | `redis` | 6379 | Docstore + cache |
-| `postgres` | 5432 | Chat history |
+| `postgres` | 5432 | Chat history + feedback |
 
 ### Docker Compose (prod)
 
@@ -121,10 +134,11 @@ python -m src.main evaluate scripts/test_set_example.json
 ### API Usage
 
 ```bash
-# Ingest (PDF, image, DOCX, HTML)
+# Ingest (PDF, image, DOCX, HTML, audio)
 curl -X POST -F "file=@paper.pdf" http://localhost:8000/ingest
 curl -X POST -F "file=@diagram.png" http://localhost:8000/ingest
 curl -X POST -F "file=@report.docx" http://localhost:8000/ingest
+curl -X POST -F "file=@meeting.mp3" http://localhost:8000/ingest
 
 # Ingest from URL
 curl -X POST "http://localhost:8000/ingest/url?url=https://example.com/article.html"
@@ -154,6 +168,14 @@ curl http://localhost:8000/health
 
 # History
 curl "http://localhost:8000/history?session_id=abc"
+
+# Feedback (thumbs up)
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"session_id": "abc", "message_id": 1, "rating": 1}' \
+  http://localhost:8000/feedback
+
+# Metrics (Prometheus)
+curl http://localhost:8000/metrics
 ```
 
 ## Configuration
@@ -188,6 +210,11 @@ All settings via `.env`:
 | `AUDIO_TRANSCRIPTION_LANGUAGE` | — | Optional ISO language code (e.g. `en`) |
 | `AUDIO_CHUNK_SECONDS` | `300` | Chunk size for large files (seconds) |
 | `AUDIO_MAX_FILE_SIZE_MB` | `200` | Max file size before forced chunking |
+| `API_KEYS` | `[]` | Comma-separated list of valid API keys |
+| `RATE_LIMIT` | `10/minute` | Default rate limit per endpoint |
+| `CORS_ORIGINS` | `*` | Allowed CORS origins (comma-separated) |
+| `REQUEST_TIMEOUT_SECONDS` | `120` | Per-request timeout |
+| `ARQ_REDIS_URL` | `redis://localhost:6379/1` | Redis URL for task queue |
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `LOG_FORMAT` | `json` | `json` or `text` |
 
@@ -196,21 +223,23 @@ All settings via `.env`:
 ```
 src/
 ├── config/          # pydantic-settings
-├── core/            # EmbeddingFactory, QueryCache, logging
+├── core/            # EmbeddingFactory, QueryCache, retry, logging
 ├── models/          # Pydantic schemas
-├── ingestion/       # Async PDF parsing (unstructured)
+├── ingestion/       # PDF, audio (Whisper), unstructured multi-format
 ├── summarization/   # Groq + GPT-4o-mini summarization
 ├── retrieval/       # Qdrant hybrid, reranker, query transformer
 ├── generation/      # LangGraph graph + RAGChain + PromptManager
 ├── storage/         # Redis-backed docstore
-├── chat/            # PostgreSQL chat history
+├── chat/            # PostgreSQL chat history + feedback
 ├── pipeline/        # Pipeline orchestrator
-├── api/             # FastAPI (REST + SSE streaming)
+├── api/             # FastAPI, arq worker
 ├── ui/              # Streamlit web app
-└── main.py          # CLI (api, prod, ingest, query, ui, evaluate)
+└── main.py          # CLI entry point
 
+alembic/             # Database migrations
 tests/               # pytest tests (unit + mock)
 scripts/             # evaluate.py, test_set_example.json
+.github/workflows/   # CI pipeline
 ```
 
 ## Development

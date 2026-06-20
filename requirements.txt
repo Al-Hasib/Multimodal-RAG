@@ -43,7 +43,6 @@ streamlit>=1.42
 
 # Audio transcription
 pydub>=0.25
-openai>=1.0
 
 # Observability
 langfuse>=2.59
@@ -51,6 +50,14 @@ python-json-logger>=3.0
 
 # Caching
 cachetools>=5.5
+
+# API hardening
+slowapi>=0.1.9
+prometheus-fastapi-instrumentator>=7.0
+tenacity>=9.0
+
+# Task queue (async background jobs)
+arq>=0.26
 
 # Evaluation
 ragas>=0.2

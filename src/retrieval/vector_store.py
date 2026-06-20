@@ -4,7 +4,8 @@ from langchain_openai import OpenAIEmbeddings
 from langchain.retrievers.multi_vector import MultiVectorRetriever
 from langchain_core.documents import Document as LCDocument
 from src.config.settings import settings
-from src.models.schemas import ExtractedDocument, SummaryResult
+from src.models.schemas import ExtractedDocument
+from src.core.retry import default_retry, SummaryResult
 from src.storage.redis_docstore import RedisDocStore
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -68,6 +69,7 @@ class VectorStoreManager:
             hnsw_config=HnswConfigDiff(m=16, ef_construct=100),
         )
 
+    @default_retry
     def index_document(self, document: ExtractedDocument, summaries: SummaryResult) -> str:
         group_id = str(uuid.uuid4())
         logger.info(f"Indexing document (group={group_id}) into Qdrant")
@@ -123,6 +125,7 @@ class VectorStoreManager:
 
         return group_id
 
+    @default_retry
     def delete_document(self, group_id: str) -> bool:
         key = f"{DOC_POINTS_KEY_PREFIX}{group_id}"
         point_ids = self.docstore.client.smembers(key)
@@ -141,6 +144,7 @@ class VectorStoreManager:
         logger.info(f"Deleted {len(pids)} points for group {group_id}")
         return True
 
+    @default_retry
     def clear_collection(self):
         self.client.delete_collection(collection_name=self.collection_name)
         self._ensure_collection()

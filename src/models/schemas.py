@@ -75,3 +75,25 @@ class DocumentInfo(BaseModel):
 class DocumentList(BaseModel):
     documents: list[DocumentInfo]
     total: int
+
+
+class FeedbackRequest(BaseModel):
+    session_id: str
+    message_id: int
+    rating: int = Field(..., ge=-1, le=1)
+    comment: str | None = None
+
+
+class JobStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class JobInfo(BaseModel):
+    job_id: str
+    status: JobStatus
+    filename: str | None = None
+    result: dict | None = None
+    error: str | None = None

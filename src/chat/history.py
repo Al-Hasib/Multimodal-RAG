@@ -25,6 +25,17 @@ class Conversation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
+class Feedback(Base):
+    __tablename__ = "feedback"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    message_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
 class DocumentRecord(Base):
     __tablename__ = "documents"
 
@@ -45,9 +56,18 @@ class ChatHistoryManager:
         self.async_session = async_sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
 
     async def init_db(self):
-        async with self.engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("PostgreSQL tables created")
+        try:
+            from alembic.config import Config
+            from alembic.command import upgrade
+            alembic_cfg = Config("alembic.ini")
+            async with self.engine.begin() as conn:
+                await conn.run_sync(lambda sync_conn: upgrade(alembic_cfg, "head"))
+            logger.info("PostgreSQL migrations applied")
+        except Exception:
+            logger.warning("Alembic migration failed, falling back to create_all")
+            async with self.engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("PostgreSQL tables created")
 
     async def add_message(self, session_id: str, role: str, content: str, metadata: Optional[dict] = None):
         async with self.async_session() as session:
@@ -142,6 +162,31 @@ class ChatHistoryManager:
             await session.delete(d)
             await session.commit()
             return True
+
+    async def add_feedback(self, session_id: str, message_id: int, rating: int, comment: Optional[str] = None):
+        async with self.async_session() as session:
+            fb = Feedback(
+                session_id=session_id,
+                message_id=message_id,
+                rating=rating,
+                comment=comment,
+            )
+            session.add(fb)
+            await session.commit()
+
+    async def get_feedback(self, session_id: str, limit: int = 50) -> list[dict]:
+        async with self.async_session() as session:
+            stmt = (
+                select(Feedback)
+                .where(Feedback.session_id == session_id)
+                .order_by(Feedback.created_at.desc())
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            return [
+                {"id": f.id, "message_id": f.message_id, "rating": f.rating, "comment": f.comment}
+                for f in result.scalars().all()
+            ]
 
     async def close(self):
         await self.engine.dispose()

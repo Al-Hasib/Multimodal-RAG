@@ -2,10 +2,11 @@ import os
 import tempfile
 from typing import Optional
 from unstructured.partition.auto import partition
-from unstructured.partition.pdf import partition_pdf
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from src.config.settings import settings
 from src.ingestion.audio_processor import AudioProcessor, AUDIO_EXTENSIONS
 from src.models.schemas import ExtractedDocument, ExtractedElement, DocumentType, FileFormat
+from src.core.retry import default_retry
 import logging
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,16 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp"}
 DOCX_EXTENSIONS = {".docx", ".doc"}
 HTML_EXTENSIONS = {".html", ".htm", ".xhtml"}
 URL_SCHEMES = {"http://", "https://"}
+
+
+CHUNK_STRATEGIES = {
+    FileFormat.PDF: {"chunk_size": 10000, "chunk_overlap": 500, "separators": ["\n\n", "\n", " ", ""]},
+    FileFormat.DOCX: {"chunk_size": 8000, "chunk_overlap": 400, "separators": ["\n\n", "\n", " ", ""]},
+    FileFormat.HTML: {"chunk_size": 6000, "chunk_overlap": 300, "separators": ["\n\n", "\n", " ", ""]},
+    FileFormat.URL: {"chunk_size": 6000, "chunk_overlap": 300, "separators": ["\n\n", "\n", " ", ""]},
+    FileFormat.IMAGE: {"chunk_size": 4000, "chunk_overlap": 200, "separators": ["\n\n", "\n", " ", ""]},
+    FileFormat.AUDIO: {"chunk_size": 2000, "chunk_overlap": 100, "separators": ["\n\n", "\n", ". ", " ", ""]},
+}
 
 
 class DocumentProcessor:
@@ -90,6 +101,27 @@ class DocumentProcessor:
             kwargs["include_metadata"] = True
         return kwargs
 
+    def _apply_chunk_strategy(self, fmt: FileFormat, text_elements: list[ExtractedElement]) -> list[ExtractedElement]:
+        config = CHUNK_STRATEGIES.get(fmt)
+        if not config:
+            return text_elements
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=config["chunk_size"],
+            chunk_overlap=config["chunk_overlap"],
+            separators=config["separators"],
+        )
+        result = []
+        for el in text_elements:
+            raw = str(el.content)
+            chunks = splitter.split_text(raw)
+            for chunk in chunks:
+                result.append(ExtractedElement(
+                    type=DocumentType.TEXT,
+                    content=chunk,
+                    metadata=el.metadata,
+                ))
+        return result
+
     def _elements_to_document(self, source: str, fmt: FileFormat, elements: list) -> ExtractedDocument:
         filename = os.path.basename(source) if not source.startswith("http") else source
         doc = ExtractedDocument(filename=filename, file_format=fmt)
@@ -119,5 +151,7 @@ class DocumentProcessor:
                     metadata=getattr(el, "metadata", {}),
                 ))
 
+        if doc.texts:
+            doc.texts = self._apply_chunk_strategy(fmt, doc.texts)
         logger.info(f"Extracted {len(doc.texts)} texts, {len(doc.tables)} tables, {len(doc.images)} images")
         return doc

@@ -59,6 +59,9 @@ tenacity>=9.0
 # Task queue (async background jobs)
 arq>=0.26
 
+# Database migrations
+alembic>=1.14
+
 # Evaluation
 ragas>=0.2
 datasets>=3.0

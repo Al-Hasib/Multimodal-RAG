@@ -134,8 +134,11 @@ python -m src.main evaluate scripts/test_set_example.json
 ### API Usage
 
 ```bash
+# All requests can optionally include an API key
+AUTH="-H 'Authorization: Bearer sk-your-key'"
+
 # Ingest (PDF, image, DOCX, HTML, audio)
-curl -X POST -F "file=@paper.pdf" http://localhost:8000/ingest
+curl -X POST $AUTH -F "file=@paper.pdf" http://localhost:8000/ingest
 curl -X POST -F "file=@diagram.png" http://localhost:8000/ingest
 curl -X POST -F "file=@report.docx" http://localhost:8000/ingest
 curl -X POST -F "file=@meeting.mp3" http://localhost:8000/ingest
@@ -156,7 +159,7 @@ curl -X DELETE http://localhost:8000/documents/1
 curl -X POST http://localhost:8000/reindex
 
 # Query
-curl -X POST -H "Content-Type: application/json" \
+curl -X POST $AUTH -H "Content-Type: application/json" \
   -d '{"question": "What is attention?", "session_id": "abc"}' \
   http://localhost:8000/query
 
@@ -170,7 +173,7 @@ curl http://localhost:8000/health
 curl "http://localhost:8000/history?session_id=abc"
 
 # Feedback (thumbs up)
-curl -X POST -H "Content-Type: application/json" \
+curl -X POST $AUTH -H "Content-Type: application/json" \
   -d '{"session_id": "abc", "message_id": 1, "rating": 1}' \
   http://localhost:8000/feedback
 
@@ -245,13 +248,18 @@ scripts/             # evaluate.py, test_set_example.json
 ## Development
 
 ```bash
-pip install pytest pytest-asyncio ruff mypy pre-commit coverage
+pip install -r requirements.txt
+pip install pytest pytest-asyncio ruff mypy pre-commit coverage alembic
 pre-commit install
 
+alembic upgrade head            # apply DB migrations
 pytest                          # run tests
 coverage run -m pytest && coverage report
 ruff check src/ && ruff format src/
 mypy src/
+
+# Run background worker (for async ingestion)
+arq src.api.worker.WorkerSettings
 ```
 
 ## Contributing

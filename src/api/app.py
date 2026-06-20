@@ -209,7 +209,6 @@ async def ingest(request: Request, file: UploadFile = File(...)):
         )
 
     content = await file.read()
-    import os as _os
     size_mb = len(content) / (1024 * 1024)
 
     if size_mb > 10:

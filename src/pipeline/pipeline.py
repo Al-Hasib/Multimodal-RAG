@@ -37,7 +37,7 @@ class RAGPipeline:
         }
         filename = os.path.basename(source) if not source.startswith("http") else source
         fmt = (file_format or self.doc_processor.detect_format(source)).value
-        doc_id = await self.chat_history.record_document(filename, source, fmt, stats, user_id=user_id)
+        doc_id = await self.chat_history.record_document(filename, source, fmt, stats, user_id=user_id, group_id=group_id)
 
         logger.info(f"Document ingested: id={doc_id}, group={group_id}, {source}")
         return {"id": doc_id, "group_id": group_id, "filename": filename, **stats}
@@ -58,7 +58,7 @@ class RAGPipeline:
             "images": len(document.images),
         }
         temp_path = f"/tmp/{filename}"
-        doc_id = await self.chat_history.record_document(filename, temp_path, fmt.value, stats, user_id=user_id)
+        doc_id = await self.chat_history.record_document(filename, temp_path, fmt.value, stats, user_id=user_id, group_id=group_id)
         return {"id": doc_id, "group_id": group_id, "filename": filename, **stats}
 
     async def list_documents(self, skip: int = 0, limit: int = 50, user_id: int = 0) -> tuple[list[DocumentInfo], int]:
@@ -72,9 +72,12 @@ class RAGPipeline:
         if not doc:
             return False
 
-        # Delete from Qdrant + Redis docstore
+        if doc.group_id:
+            self.vector_store.delete_document(doc.group_id)
+
         self.cache.invalidate_all()
         await self.chat_history.delete_user_document_record(doc_id, user_id=user_id)
+        logger.info(f"Document {doc_id} fully deleted (group={doc.group_id})")
         return True
 
     async def reindex_all(self) -> int:
@@ -90,7 +93,7 @@ class RAGPipeline:
                     logger.error(f"Failed to reindex {doc.filename}: {e}")
         return count
 
-    async def aquery(self, question: str, k: int = 5, session_id: str | None = None, user_id: int = 0) -> QueryResponse:
+    async def aquery(self, question: str, k: int = 5, session_id: str | None = None, user_id: int = 0, metadata_filter: dict | None = None) -> QueryResponse:
         cached = self.cache.get(question, k)
         if cached:
             return QueryResponse(**cached)
@@ -99,7 +102,7 @@ class RAGPipeline:
         if session_id:
             chat_history = await self.chat_history.get_history(session_id, user_id=user_id)
 
-        result = self.rag_chain.invoke_with_sources(question, chat_history=chat_history)
+        result = self.rag_chain.invoke_with_sources(question, chat_history=chat_history, metadata_filter=metadata_filter)
 
         guardrail_blocked = result.guardrail_input and not result.guardrail_input.get("passed", True)
         if not guardrail_blocked and session_id:
@@ -111,14 +114,14 @@ class RAGPipeline:
 
         return result
 
-    async def astream(self, question: str, session_id: str | None = None, user_id: int = 0):
+    async def astream(self, question: str, session_id: str | None = None, user_id: int = 0, metadata_filter: dict | None = None):
         chat_history = []
         if session_id:
             chat_history = await self.chat_history.get_history(session_id, user_id=user_id)
             await self.chat_history.add_message(session_id, "user", question, user_id=user_id)
 
         full = ""
-        async for chunk in self.rag_chain.astream(question, chat_history=chat_history, session_id=session_id):
+        async for chunk in self.rag_chain.astream(question, chat_history=chat_history, session_id=session_id, metadata_filter=metadata_filter):
             full += chunk
             yield chunk
 

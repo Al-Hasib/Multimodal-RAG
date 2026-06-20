@@ -61,6 +61,7 @@ class DocumentRecord(Base):
     num_images: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(32), default="processed")
     user_id: Mapped[int] = mapped_column(Integer, nullable=True, default=0)
+    group_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -110,7 +111,7 @@ class ChatHistoryManager:
                 for m in reversed(messages)
             ]
 
-    async def record_document(self, filename: str, file_path: str, file_format: str, stats: dict, user_id: int = 0) -> int:
+    async def record_document(self, filename: str, file_path: str, file_format: str, stats: dict, user_id: int = 0, group_id: str | None = None) -> int:
         async with self.async_session() as session:
             doc = DocumentRecord(
                 filename=filename,
@@ -120,6 +121,7 @@ class ChatHistoryManager:
                 num_tables=stats.get("tables", 0),
                 num_images=stats.get("images", 0),
                 user_id=user_id,
+                group_id=group_id,
             )
             session.add(doc)
             await session.commit()
@@ -145,13 +147,14 @@ class ChatHistoryManager:
                     filename=d.filename,
                     file_format=d.file_format,
                     file_path=d.file_path,
-                    num_texts=d.num_texts,
-                    num_tables=d.num_tables,
-                    num_images=d.num_images,
-                    status=d.status,
-                    created_at=d.created_at,
-                )
-                for d in docs
+                num_texts=d.num_texts,
+                num_tables=d.num_tables,
+                num_images=d.num_images,
+                status=d.status,
+                group_id=d.group_id,
+                created_at=d.created_at,
+            )
+            for d in docs
             ], total
 
     async def get_user_document(self, doc_id: int, user_id: int) -> Optional[DocumentInfo]:
@@ -170,6 +173,7 @@ class ChatHistoryManager:
                 num_tables=d.num_tables,
                 num_images=d.num_images,
                 status=d.status,
+                group_id=d.group_id,
                 created_at=d.created_at,
             )
 

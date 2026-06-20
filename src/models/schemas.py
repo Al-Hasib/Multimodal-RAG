@@ -50,6 +50,7 @@ class QueryRequest(BaseModel):
     question: str = Field(..., min_length=1)
     k: int = Field(default=5, ge=1, le=20)
     session_id: str | None = None
+    metadata_filter: dict | None = Field(default=None, description="Qdrant filter dict (e.g. {\"must\": [{\"key\": \"file_format\", \"match\": {\"value\": \"pdf\"}}]})")
 
 
 class QueryResponse(BaseModel):
@@ -69,6 +70,7 @@ class DocumentInfo(BaseModel):
     num_tables: int = 0
     num_images: int = 0
     status: str = "processed"
+    group_id: str | None = None
     created_at: datetime | None = None
 
 

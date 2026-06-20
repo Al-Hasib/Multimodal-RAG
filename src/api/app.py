@@ -333,6 +333,7 @@ async def query(request: Request, body: QueryRequest, current_user: dict = Depen
             k=body.k,
             session_id=body.session_id,
             user_id=current_user["user_id"],
+            metadata_filter=body.metadata_filter,
         )
     except Exception as e:
         raise AppError(code="query_failed", message=str(e), status_code=500)
@@ -340,10 +341,17 @@ async def query(request: Request, body: QueryRequest, current_user: dict = Depen
 
 @app.get("/query/stream", summary="Stream a response", dependencies=[Depends(get_current_user)])
 @limiter.limit(settings.rate_limit)
-async def query_stream(request: Request, question: str = Query(..., min_length=1), session_id: str = Query(None), current_user: dict = Depends(get_current_user)):
+async def query_stream(
+    request: Request,
+    question: str = Query(..., min_length=1),
+    session_id: str = Query(None),
+    metadata_filter: str = Query(None, description="JSON-encoded Qdrant filter dict"),
+    current_user: dict = Depends(get_current_user),
+):
     async def event_stream():
         pipe = get_pipeline()
-        async for chunk in pipe.astream(question=question, session_id=session_id, user_id=current_user["user_id"]):
+        parsed_filter = json.loads(metadata_filter) if metadata_filter else None
+        async for chunk in pipe.astream(question=question, session_id=session_id, user_id=current_user["user_id"], metadata_filter=parsed_filter):
             yield f"data: {json.dumps({'token': chunk})}\n\n"
         yield "data: [DONE]\n\n"
     return StreamingResponse(event_stream(), media_type="text/event-stream")

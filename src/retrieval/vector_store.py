@@ -5,7 +5,8 @@ from langchain.retrievers.multi_vector import MultiVectorRetriever
 from langchain_core.documents import Document as LCDocument
 from src.config.settings import settings
 from src.models.schemas import ExtractedDocument
-from src.core.retry import default_retry, SummaryResult
+from src.core.retry import default_retry
+from src.models.schemas import SummaryResult
 from src.storage.redis_docstore import RedisDocStore
 from qdrant_client import QdrantClient
 from qdrant_client.models import (

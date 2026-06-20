@@ -15,7 +15,7 @@ class RAGChain:
     def _make_config(self, session_id: Optional[str] = None) -> dict:
         return {"configurable": {"thread_id": session_id or "default"}}
 
-    def _make_initial_state(self, question: str, chat_history: Optional[list] = None, session_id: Optional[str] = None) -> dict:
+    def _make_initial_state(self, question: str, chat_history: Optional[list] = None, session_id: Optional[str] = None, metadata_filter: Optional[dict] = None) -> dict:
         return {
             "question": question,
             "chat_history": chat_history or [],
@@ -30,6 +30,7 @@ class RAGChain:
             "blocked": False,
             "block_reason": None,
             "guardrail_retries": 0,
+            "metadata_filter": metadata_filter,
         }
 
     def invoke(self, question: str, chat_history: Optional[list] = None, session_id: Optional[str] = None) -> str:
@@ -39,9 +40,9 @@ class RAGChain:
         )
         return result["response"]
 
-    def invoke_with_sources(self, question: str, chat_history: Optional[list] = None) -> QueryResponse:
+    def invoke_with_sources(self, question: str, chat_history: Optional[list] = None, metadata_filter: Optional[dict] = None) -> QueryResponse:
         result = self.graph.invoke(
-            self._make_initial_state(question, chat_history),
+            self._make_initial_state(question, chat_history, metadata_filter=metadata_filter),
             config=self._make_config(),
         )
 
@@ -60,8 +61,8 @@ class RAGChain:
             guardrail_output=result.get("guardrail_output"),
         )
 
-    async def astream(self, question: str, chat_history: Optional[list] = None, session_id: Optional[str] = None):
-        initial_state = self._make_initial_state(question, chat_history, session_id)
+    async def astream(self, question: str, chat_history: Optional[list] = None, session_id: Optional[str] = None, metadata_filter: Optional[dict] = None):
+        initial_state = self._make_initial_state(question, chat_history, session_id, metadata_filter)
         config = self._make_config(session_id)
         async for event in self.graph.astream_events(initial_state, config=config, version="v2"):
             kind = event.get("event")

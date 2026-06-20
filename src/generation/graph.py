@@ -27,6 +27,7 @@ class RAGState(TypedDict):
     blocked: bool
     block_reason: Optional[str]
     guardrail_retries: int
+    metadata_filter: Optional[dict]
 
 
 def create_rag_graph(retriever: MultiModalRetriever):
@@ -64,7 +65,7 @@ def create_rag_graph(retriever: MultiModalRetriever):
         return {"response": safe, "blocked": True}
 
     def retrieve(state: RAGState) -> dict:
-        result = retriever.retrieve(state["question"])
+        result = retriever.retrieve(state["question"], metadata_filter=state.get("metadata_filter"))
         return {"retrieval_result": result}
 
     def build_context(state: RAGState) -> dict:
@@ -111,12 +112,12 @@ def create_rag_graph(retriever: MultiModalRetriever):
         if not result.passed and result.action.value == "block":
             logger.warning(f"Output guardrail blocked: {result.reason}")
             safe = "I'm sorry, but I couldn't generate a suitable answer for that question."
-        return {
-            "guardrail_output": {"passed": False, "reason": result.reason, "action": result.action.value},
-            "response": safe,
-            "blocked": True,
-            "guardrail_retries": state.get("guardrail_retries", 0) + 1,
-        }
+            return {
+                "guardrail_output": {"passed": False, "reason": result.reason, "action": result.action.value},
+                "response": safe,
+                "blocked": True,
+                "guardrail_retries": state.get("guardrail_retries", 0) + 1,
+            }
 
         return {
             "guardrail_output": {"passed": True, "flags": result.details.get("flags", [])},

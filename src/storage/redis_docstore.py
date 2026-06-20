@@ -1,7 +1,6 @@
-import json
 import pickle
-from typing import Any, Iterable, Iterator, List, Optional, Tuple
-from langchain.storage import BaseStore
+from typing import Any, Iterator, List, Optional, Tuple
+from langchain_core.stores import BaseStore
 from redis import Redis as RedisClient
 from src.config.settings import settings
 import logging

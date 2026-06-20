@@ -1,8 +1,8 @@
 import uuid
-from langchain_qdrant import QdrantVectorStore, RetrievalMode
+from langchain_qdrant import QdrantVectorStore
 from langchain_openai import OpenAIEmbeddings
 from langchain.retrievers.multi_vector import MultiVectorRetriever
-from langchain.schema.document import Document
+from langchain_core.documents import Document
 from src.config.settings import settings
 from src.models.schemas import ExtractedDocument, SummaryResult
 from src.storage.redis_docstore import RedisDocStore

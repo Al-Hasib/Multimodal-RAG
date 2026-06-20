@@ -1,7 +1,8 @@
 from langchain.retrievers.multi_vector import MultiVectorRetriever
 from base64 import b64decode
 from qdrant_client import QdrantClient
-from qdrant_client.models import Filter, FieldCondition, MatchValue, SearchRequest, HybridFusion, Fusion
+from langchain_openai import OpenAIEmbeddings
+from langchain_core.documents import Document
 from src.config.settings import settings
 from src.models.schemas import RetrievalResult
 from src.retrieval.reranker import Reranker
@@ -32,7 +33,7 @@ class MultiModalRetriever:
         logger.info(f"Retrieving for query with k={top_k}: {query}")
 
         queries = self.query_transformer.transform(query)
-        all_docs = []
+        all_docs: list = []
 
         for q in queries:
             if self.hybrid:
@@ -49,10 +50,8 @@ class MultiModalRetriever:
         return result
 
     def _hybrid_search(self, query: str, k: int) -> list:
-        from qdrant_client.models import SparseEmbedding
-        from langchain_openai import OpenAIEmbeddings
-
-        dense_vector = OpenAIEmbeddings(model=settings.openai_embedding_model).embed_query(query)
+        embedding = OpenAIEmbeddings(model=settings.openai_embedding_model)
+        dense_vector = embedding.embed_query(query)
 
         search_result = self.qdrant_client.search(
             collection_name=settings.qdrant_collection_name,
@@ -64,14 +63,7 @@ class MultiModalRetriever:
             return []
 
         stored_docs = self.retriever.docstore.mget([str(pid) for pid in point_ids])
-        from langchain.schema.document import Document as LCDocument
-        docs = []
-        for sd in stored_docs:
-            if sd is not None:
-                if isinstance(sd, LCDocument):
-                    docs.append(sd)
-                else:
-                    docs.append(sd)
+        docs = [sd for sd in stored_docs if sd is not None]
         return docs
 
     def _parse_docs(self, docs) -> RetrievalResult:

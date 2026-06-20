@@ -9,8 +9,8 @@ pillow>=10.0
 lxml>=5.0
 
 # Vector store & embeddings
-chromadb>=0.4
-langchain-chroma>=0.1
+qdrant-client>=1.9
+langchain-qdrant>=0.1
 tiktoken>=0.5
 
 # LangChain
@@ -24,6 +24,3 @@ langchain-core>=0.2
 fastapi>=0.100
 uvicorn>=0.20
 python-multipart>=0.0.5
-
-# Logging
-loguru>=0.7

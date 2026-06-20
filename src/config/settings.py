@@ -12,8 +12,10 @@ class Settings(BaseSettings):
     openai_chat_model: str = "gpt-4o-mini"
     groq_chat_model: str = "llama-3.1-8b-instant"
 
-    chroma_collection_name: str = "multi_modal_rag"
-    chroma_persist_directory: str = "./chroma_db"
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: Optional[str] = None
+    qdrant_collection_name: str = "multi_modal_rag"
+    qdrant_prefer_grpc: bool = False
 
     pdf_extraction_strategy: str = "hi_res"
     pdf_infer_table_structure: bool = True

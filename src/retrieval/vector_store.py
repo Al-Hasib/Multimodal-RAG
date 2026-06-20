@@ -1,26 +1,32 @@
 import uuid
-from langchain_chroma import Chroma
+from langchain_qdrant import QdrantVectorStore
 from langchain_openai import OpenAIEmbeddings
-from langchain.storage import InMemoryStore, LocalFileStore
+from langchain.storage import InMemoryStore
 from langchain.retrievers.multi_vector import MultiVectorRetriever
 from langchain.schema.document import Document
 from src.config.settings import settings
 from src.models.schemas import ExtractedDocument, SummaryResult
-from typing import Optional
+from qdrant_client import QdrantClient
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 class VectorStoreManager:
-    def __init__(self, persist_directory: Optional[str] = None):
-        persist = persist_directory or settings.chroma_persist_directory
+    def __init__(self):
         self.id_key = "doc_id"
+        self.collection_name = settings.qdrant_collection_name
 
-        self.vectorstore = Chroma(
-            collection_name=settings.chroma_collection_name,
-            embedding_function=OpenAIEmbeddings(model=settings.openai_embedding_model),
-            persist_directory=persist,
+        client = QdrantClient(
+            url=settings.qdrant_url,
+            api_key=settings.qdrant_api_key,
+            prefer_grpc=settings.qdrant_prefer_grpc,
+        )
+
+        self.vectorstore = QdrantVectorStore(
+            client=client,
+            collection_name=self.collection_name,
+            embedding=OpenAIEmbeddings(model=settings.openai_embedding_model),
         )
 
         self.docstore = InMemoryStore()
@@ -32,7 +38,7 @@ class VectorStoreManager:
         )
 
     def index_document(self, document: ExtractedDocument, summaries: SummaryResult) -> None:
-        logger.info("Indexing document into vectorstore")
+        logger.info("Indexing document into Qdrant")
 
         if document.texts and summaries.text_summaries:
             doc_ids = [str(uuid.uuid4()) for _ in document.texts]

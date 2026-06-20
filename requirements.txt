@@ -1,0 +1,29 @@
+# Core
+pydantic>=2.0
+pydantic-settings>=2.0
+python-dotenv>=1.0
+
+# Document processing
+unstructured[all-docs]>=0.10
+pillow>=10.0
+lxml>=5.0
+
+# Vector store & embeddings
+chromadb>=0.4
+langchain-chroma>=0.1
+tiktoken>=0.5
+
+# LangChain
+langchain>=0.2
+langchain-community>=0.2
+langchain-openai>=0.1
+langchain-groq>=0.1
+langchain-core>=0.2
+
+# API
+fastapi>=0.100
+uvicorn>=0.20
+python-multipart>=0.0.5
+
+# Logging
+loguru>=0.7

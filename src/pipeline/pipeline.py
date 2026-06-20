@@ -101,11 +101,14 @@ class RAGPipeline:
 
         result = self.rag_chain.invoke_with_sources(question, chat_history=chat_history)
 
-        if session_id:
+        guardrail_blocked = result.guardrail_input and not result.guardrail_input.get("passed", True)
+        if not guardrail_blocked and session_id:
             await self.chat_history.add_message(session_id, "user", question)
             await self.chat_history.add_message(session_id, "assistant", result.answer)
 
-        self.cache.set(question, k, result.model_dump())
+        if not guardrail_blocked:
+            self.cache.set(question, k, result.model_dump())
+
         return result
 
     async def astream(self, question: str, session_id: str | None = None):

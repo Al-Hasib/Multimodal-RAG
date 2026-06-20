@@ -79,6 +79,11 @@ async def health():
     except Exception as e:
         checks["postgres"] = f"error: {e}"
     checks["langfuse"] = "configured" if settings.langfuse_enabled else "disabled"
+    checks["guardrails"] = {
+        "enabled": settings.guardrail_enabled,
+        "input_check": settings.guardrail_input_check,
+        "output_check": settings.guardrail_output_check,
+    }
     return checks
 
 

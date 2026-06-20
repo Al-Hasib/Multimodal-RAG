@@ -55,6 +55,8 @@ class QueryResponse(BaseModel):
     answer: str
     context_texts: list[str] = Field(default_factory=list)
     context_images: list[str] = Field(default_factory=list)
+    guardrail_input: dict | None = None
+    guardrail_output: dict | None = None
 
 
 class DocumentInfo(BaseModel):

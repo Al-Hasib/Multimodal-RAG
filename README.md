@@ -69,6 +69,13 @@ prompt versioning (LangFuse), streaming, chat history (PostgreSQL), Redis cachin
 | **Health Checks** | Redis, Qdrant, PostgreSQL status endpoint |
 | **Production Build** | Multi-stage Dockerfile + gunicorn workers |
 | **Evaluation** | `scripts/evaluate.py` using `ragas` metrics |
+| **Document Management** | List, get, delete documents via REST API |
+| **Multi-format Ingestion** | PDF, images (JPG/PNG), DOCX, HTML, URLs |
+| **Re-index** | Wipe and re-index all documents from scratch |
+| **URL Ingestion** | `POST /ingest/url` to fetch and index web pages |
+| **Input Guardrails** | Prompt injection detection (regex + LLM), toxicity check, PII scan, topic relevance |
+| **Output Guardrails** | Hallucination detection (factual grounding), answer relevance, output toxicity check |
+| **LangFuse Integration** | Guardrail violations logged as LangFuse traces for audit |
 
 ## Quick Start
 
@@ -114,8 +121,25 @@ python -m src.main evaluate scripts/test_set_example.json
 ### API Usage
 
 ```bash
-# Ingest
+# Ingest (PDF, image, DOCX, HTML)
 curl -X POST -F "file=@paper.pdf" http://localhost:8000/ingest
+curl -X POST -F "file=@diagram.png" http://localhost:8000/ingest
+curl -X POST -F "file=@report.docx" http://localhost:8000/ingest
+
+# Ingest from URL
+curl -X POST "http://localhost:8000/ingest/url?url=https://example.com/article.html"
+
+# List documents
+curl http://localhost:8000/documents
+
+# Get document details
+curl http://localhost:8000/documents/1
+
+# Delete a document
+curl -X DELETE http://localhost:8000/documents/1
+
+# Re-index all
+curl -X POST http://localhost:8000/reindex
 
 # Query
 curl -X POST -H "Content-Type: application/json" \
@@ -153,6 +177,12 @@ All settings via `.env`:
 | `QUERY_TRANSFORMER_ENABLED` | `true` | Enable query transformation |
 | `QUERY_TRANSFORMER_METHOD` | `hyde` | `hyde`, `multi_query`, `step_back` |
 | `PROMPT_USE_LANGFUSE` | `false` | Fetch prompts from LangFuse |
+| `GUARDRAIL_ENABLED` | `true` | Enable all guardrails |
+| `GUARDRAIL_INPUT_CHECK` | `true` | Check user questions for injection/toxicity/PII |
+| `GUARDRAIL_OUTPUT_CHECK` | `true` | Check LLM answers for hallucination/relevance/toxicity |
+| `GUARDRAIL_BLOCK_ON_INPUT_VIOLATION` | `true` | Block & return safe message on input violation |
+| `GUARDRAIL_BLOCK_ON_OUTPUT_VIOLATION` | `false` | Re-generate on output violation (false = flag only) |
+| `GUARDRAIL_LOG_TO_LANGFUSE` | `true` | Log violations as LangFuse traces |
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `LOG_FORMAT` | `json` | `json` or `text` |
 

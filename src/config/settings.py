@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     prompt_use_langfuse: bool = False
     prompt_default_version: int = 1
 
+    guardrail_enabled: bool = True
+    guardrail_input_check: bool = True
+    guardrail_output_check: bool = True
+    guardrail_block_on_input_violation: bool = True
+    guardrail_block_on_output_violation: bool = False
+    guardrail_log_to_langfuse: bool = True
+    guardrail_prompt_injection_model: str = "llama-3.1-8b-instant"
+
     model_config = {"env_prefix": "", "case_sensitive": False, "env_file": ".env", "extra": "ignore"}
 
 

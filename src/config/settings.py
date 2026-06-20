@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     jwt_access_token_expire_seconds: int = 3600
     jwt_refresh_token_expire_seconds: int = 2592000
 
+    retention_history_days: int = 365
+    retention_feedback_days: int = 365
+
     model_config = {"env_prefix": "", "case_sensitive": False, "env_file": ".env", "extra": "ignore"}
 
 

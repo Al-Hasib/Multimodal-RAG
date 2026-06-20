@@ -14,7 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.schemas import (
     QueryRequest, QueryResponse, DocumentList, DocumentInfo,
-    FeedbackRequest, JobInfo, JobStatus,
+    FeedbackRequest, JobInfo, JobStatus, SearchResult, UpdateDocumentRequest,
+)
+from src.core.metrics import (
+    rag_requests_total, rag_requests_duration, rag_total_tokens,
+    rag_cost_total, rag_cache_hits, rag_cache_misses, rag_document_count,
+    MODEL_PRICING,
 )
 from src.auth.schemas import RegisterRequest, LoginRequest, TokenResponse, UserResponse
 from src.auth.deps import get_current_user, create_access_token, create_refresh_token
@@ -203,7 +208,10 @@ async def health():
     except Exception as e:
         checks["qdrant"] = f"error: {e}"
     try:
-        from asyncpg import connect
+        pipe = get_pipeline()
+        async with pipe.chat_history.async_session() as session:
+            from sqlalchemy import text
+            await session.execute(text("SELECT 1"))
         checks["postgres"] = "ok"
     except Exception as e:
         checks["postgres"] = f"error: {e}"
@@ -214,6 +222,55 @@ async def health():
         "output_check": settings.guardrail_output_check,
     }
     return checks
+
+
+# ── Metrics / Stats ─────────────────────────────────────────────────
+
+
+@app.get("/metrics/stats", summary="Aggregated cost, latency, and usage stats")
+async def metrics_stats():
+    requests_data = rag_requests_total.collect()[0]
+    requests_total = sum(s.value for s in requests_data.samples)
+    requests_blocked = sum(s.value for s in requests_data.samples if s.labels.get("status") == "blocked")
+
+    duration_data = rag_requests_duration.collect()[0]
+    avg_latency = 0.0
+    count = 0
+    for s in duration_data.samples:
+        if s.labels.get("le") == "+Inf":
+            count = s.value
+    if count > 0:
+        total = sum(
+            float(s.labels.get("le", 0)) * s.value
+            for s in duration_data.samples
+            if s.labels.get("le") not in ("+Inf", None)
+        )
+        avg_latency = round(total / count, 3) if count else 0
+
+    cost = rag_cost_total.collect()[0].samples[0].value if rag_cost_total.collect() else 0.0
+
+    return {
+        "uptime_seconds": None,
+        "requests": {
+            "total": int(requests_total),
+            "blocked": int(requests_blocked),
+            "ok": int(requests_total - requests_blocked),
+        },
+        "latency": {
+            "avg_seconds": avg_latency,
+        },
+        "tokens": {
+            "input": int(sum(s.value for s in rag_total_tokens.collect()[0].samples if s.labels.get("type") == "input")),
+            "output": int(sum(s.value for s in rag_total_tokens.collect()[0].samples if s.labels.get("type") == "output")),
+            "total": int(sum(s.value for s in rag_total_tokens.collect()[0].samples)),
+        },
+        "cost_usd": round(cost, 6),
+        "cache": {
+            "hits": int(rag_cache_hits.collect()[0].samples[0].value),
+            "misses": int(rag_cache_misses.collect()[0].samples[0].value),
+        },
+        "model_pricing": MODEL_PRICING,
+    }
 
 
 # ── Ingestion ───────────────────────────────────────────────────────
@@ -293,6 +350,7 @@ async def get_job_status(job_id: str):
 async def list_documents(skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200), current_user: dict = Depends(get_current_user)):
     pipe = get_pipeline()
     docs, total = await pipe.list_documents(skip=skip, limit=limit, user_id=current_user["user_id"])
+    rag_document_count.set(total)
     return DocumentList(documents=docs, total=total)
 
 
@@ -319,6 +377,31 @@ async def reindex(current_user: dict = Depends(get_current_user)):
     pipe = get_pipeline()
     count = await pipe.reindex_all()
     return {"message": f"Re-indexed {count} documents", "status": "success"}
+
+
+@app.get("/search", response_model=SearchResult, summary="Search documents by filename/format", dependencies=[Depends(get_current_user)])
+async def search_documents(query: str = Query(..., min_length=1), skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200), current_user: dict = Depends(get_current_user)):
+    pipe = get_pipeline()
+    docs, total = await pipe.search_documents(query, user_id=current_user["user_id"], skip=skip, limit=limit)
+    return SearchResult(query=query, documents=docs, total=total)
+
+
+@app.patch("/documents/{doc_id}", summary="Update document (tags)", dependencies=[Depends(get_current_user)])
+async def update_document(doc_id: int, body: UpdateDocumentRequest, current_user: dict = Depends(get_current_user)):
+    if body.tags is not None:
+        ok = await get_pipeline().update_document_tags(doc_id, body.tags, user_id=current_user["user_id"])
+        if not ok:
+            raise AppError(code="not_found", message="Document not found", status_code=404)
+        doc = await get_pipeline().get_document(doc_id, user_id=current_user["user_id"])
+        return doc
+    raise AppError(code="no_changes", message="No fields to update", status_code=400)
+
+
+@app.post("/cleanup", summary="Delete expired chat history and feedback", dependencies=[Depends(get_current_user)])
+async def cleanup(current_user: dict = Depends(get_current_user)):
+    pipe = get_pipeline()
+    await pipe.cleanup()
+    return {"status": "ok", "message": "Expired records cleaned up"}
 
 
 # ── Query ───────────────────────────────────────────────────────────

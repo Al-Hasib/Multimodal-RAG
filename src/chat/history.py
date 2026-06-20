@@ -62,6 +62,7 @@ class DocumentRecord(Base):
     status: Mapped[str] = mapped_column(String(32), default="processed")
     user_id: Mapped[int] = mapped_column(Integer, nullable=True, default=0)
     group_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    tags: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -111,7 +112,7 @@ class ChatHistoryManager:
                 for m in reversed(messages)
             ]
 
-    async def record_document(self, filename: str, file_path: str, file_format: str, stats: dict, user_id: int = 0, group_id: str | None = None) -> int:
+    async def record_document(self, filename: str, file_path: str, file_format: str, stats: dict, user_id: int = 0, group_id: str | None = None, tags: list[str] | None = None) -> int:
         async with self.async_session() as session:
             doc = DocumentRecord(
                 filename=filename,
@@ -122,6 +123,7 @@ class ChatHistoryManager:
                 num_images=stats.get("images", 0),
                 user_id=user_id,
                 group_id=group_id,
+                tags=tags,
             )
             session.add(doc)
             await session.commit()
@@ -152,10 +154,56 @@ class ChatHistoryManager:
                 num_images=d.num_images,
                 status=d.status,
                 group_id=d.group_id,
+                tags=d.tags,
                 created_at=d.created_at,
             )
             for d in docs
             ], total
+
+    async def search_documents(self, query: str, user_id: int = 0, skip: int = 0, limit: int = 50) -> tuple[list[DocumentInfo], int]:
+        async with self.async_session() as session:
+            stmt = (
+                select(DocumentRecord)
+                .where(DocumentRecord.user_id == user_id)
+                .where(DocumentRecord.filename.ilike(f"%{query}%") | DocumentRecord.file_format.ilike(f"%{query}%"))
+                .order_by(DocumentRecord.created_at.desc())
+                .offset(skip).limit(limit)
+            )
+            result = await session.execute(stmt)
+            docs = result.scalars().all()
+            count_stmt = select(func.count()).select_from(DocumentRecord).where(
+                DocumentRecord.user_id == user_id,
+                DocumentRecord.filename.ilike(f"%{query}%") | DocumentRecord.file_format.ilike(f"%{query}%"),
+            )
+            total = (await session.execute(count_stmt)).scalar() or 0
+            return [
+                DocumentInfo(
+                    id=d.id, filename=d.filename, file_format=d.file_format,
+                    file_path=d.file_path, num_texts=d.num_texts,
+                    num_tables=d.num_tables, num_images=d.num_images,
+                    status=d.status, group_id=d.group_id, tags=d.tags,
+                    created_at=d.created_at,
+                )
+                for d in docs
+            ], total
+
+    async def cleanup_expired(self):
+        cutoff = datetime.now(timezone.utc)
+        async with self.async_session() as session:
+            # Delete old conversations
+            cutoff_h = cutoff.timestamp() - settings.retention_history_days * 86400
+            cutoff_h_dt = datetime.fromtimestamp(cutoff_h, tz=timezone.utc)
+            await session.execute(
+                sa_delete(Conversation).where(Conversation.created_at < cutoff_h_dt)
+            )
+            # Delete old feedback
+            cutoff_f = cutoff.timestamp() - settings.retention_feedback_days * 86400
+            cutoff_f_dt = datetime.fromtimestamp(cutoff_f, tz=timezone.utc)
+            await session.execute(
+                sa_delete(Feedback).where(Feedback.created_at < cutoff_f_dt)
+            )
+            await session.commit()
+            logger.info(f"Cleaned up records older than {settings.retention_history_days}d (history) / {settings.retention_feedback_days}d (feedback)")
 
     async def get_user_document(self, doc_id: int, user_id: int) -> Optional[DocumentInfo]:
         async with self.async_session() as session:
@@ -174,8 +222,20 @@ class ChatHistoryManager:
                 num_images=d.num_images,
                 status=d.status,
                 group_id=d.group_id,
+                tags=d.tags,
                 created_at=d.created_at,
             )
+
+    async def update_document_tags(self, doc_id: int, tags: list[str]) -> bool:
+        async with self.async_session() as session:
+            stmt = select(DocumentRecord).where(DocumentRecord.id == doc_id)
+            result = await session.execute(stmt)
+            d = result.scalar_one_or_none()
+            if not d:
+                return False
+            d.tags = tags
+            await session.commit()
+            return True
 
     async def delete_user_document_record(self, doc_id: int, user_id: int) -> bool:
         async with self.async_session() as session:
@@ -204,6 +264,7 @@ class ChatHistoryManager:
                 num_tables=d.num_tables,
                 num_images=d.num_images,
                 status=d.status,
+                tags=d.tags,
                 created_at=d.created_at,
             )
 

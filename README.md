@@ -83,6 +83,10 @@ prompt versioning (LangFuse), streaming, chat history (PostgreSQL), Redis cachin
 | **Feedback Loop** | Thumbs up/down per answer, stored in PostgreSQL |
 | **Background Jobs** | Async ingestion via `arq` Redis task queue for files > 10 MB |
 | **Prometheus Metrics** | `/metrics` endpoint for QPS, latency, error rate |
+| **Cost Tracking** | Per-request token usage + cost estimation (model-specific pricing) |
+| **Latency Breakdown** | Per-component timing (retrieval, generation, guardrails) via Prometheus histograms |
+| **Usage Stats** | `/metrics/stats` endpoint for aggregated cost, latency, cache hit ratio |
+| **Per-request Logging** | JSON structured logs with latency, tokens, cost, guardrail status |
 | **Structured Errors** | Consistent `{code, message}` error responses |
 | **Request ID Tracing** | `X-Request-ID` header on every response |
 | **CORS** | Configurable cross-origin support |
@@ -191,6 +195,9 @@ curl -X POST $AUTH -H "Content-Type: application/json" \
 
 # Metrics (Prometheus)
 curl http://localhost:8000/metrics
+
+# Usage stats (cost, latency, cache ratio)
+curl http://localhost:8000/metrics/stats
 ```
 
 ## Configuration

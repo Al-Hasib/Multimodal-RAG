@@ -71,12 +71,23 @@ class DocumentInfo(BaseModel):
     num_images: int = 0
     status: str = "processed"
     group_id: str | None = None
+    tags: list[str] = Field(default_factory=list)
     created_at: datetime | None = None
 
 
 class DocumentList(BaseModel):
     documents: list[DocumentInfo]
     total: int
+
+
+class SearchResult(BaseModel):
+    query: str
+    documents: list[DocumentInfo]
+    total: int
+
+
+class UpdateDocumentRequest(BaseModel):
+    tags: list[str] | None = None
 
 
 class FeedbackRequest(BaseModel):

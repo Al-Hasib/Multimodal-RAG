@@ -8,6 +8,7 @@ from src.retrieval.retriever import MultiModalRetriever
 from src.generation.prompts import prompt_manager
 from src.models.schemas import RetrievalResult
 from src.core.guardrails import guardrail_manager, GuardrailResult
+from src.core.metrics import get_tracker, rag_retrieval_duration, rag_generation_duration, rag_guardrail_duration
 import logging
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,9 @@ def create_rag_graph(retriever: MultiModalRetriever):
 
     def check_input_guardrail(state: RAGState) -> dict:
         import asyncio
+        t0 = __import__("time").time()
         result = asyncio.run(guardrail_manager.check_input(state["question"]))
+        rag_guardrail_duration.observe(__import__("time").time() - t0)
 
         if not result.passed and result.action.value == "block":
             logger.warning(f"Input guardrail blocked: {result.reason}")
@@ -65,7 +68,14 @@ def create_rag_graph(retriever: MultiModalRetriever):
         return {"response": safe, "blocked": True}
 
     def retrieve(state: RAGState) -> dict:
+        t0 = __import__("time").time()
         result = retriever.retrieve(state["question"], metadata_filter=state.get("metadata_filter"))
+        elapsed = __import__("time").time() - t0
+        rag_retrieval_duration.observe(elapsed)
+        try:
+            get_tracker().checkpoint("retrieval_done")
+        except Exception:
+            pass
         return {"retrieval_result": result}
 
     def build_context(state: RAGState) -> dict:
@@ -98,16 +108,29 @@ def create_rag_graph(retriever: MultiModalRetriever):
             content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img}"}})
         messages.append(HumanMessage(content=content))
 
+        t0 = __import__("time").time()
         response = llm.invoke(messages)
+        elapsed = __import__("time").time() - t0
+        rag_generation_duration.observe(elapsed)
+        try:
+            tracker = get_tracker()
+            tracker.checkpoint("generation_done")
+            usage = getattr(response, "usage_metadata", None) or {}
+            tracker.input_tokens += usage.get("input_tokens", 0) or usage.get("prompt_tokens", 0)
+            tracker.output_tokens += usage.get("output_tokens", 0) or usage.get("completion_tokens", 0)
+        except Exception:
+            pass
         return {"response": response.content}
 
     def check_output_guardrail(state: RAGState) -> dict:
         import asyncio
+        t0 = __import__("time").time()
         result = asyncio.run(guardrail_manager.check_output(
             question=state["question"],
             answer=state["response"],
             context=state["context_text"],
         ))
+        rag_guardrail_duration.observe(__import__("time").time() - t0)
 
         if not result.passed and result.action.value == "block":
             logger.warning(f"Output guardrail blocked: {result.reason}")

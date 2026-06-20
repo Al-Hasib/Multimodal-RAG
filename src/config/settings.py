@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     groq_api_key: Optional[str] = None
     langchain_api_key: Optional[str] = None
     langchain_tracing_v2: bool = False
+    langchain_endpoint: str = "https://api.smith.langchain.com"
+    langchain_project: str = "multimodal-rag"
 
     openai_embedding_model: str = "text-embedding-3-small"
     openai_chat_model: str = "gpt-4o-mini"
@@ -16,6 +18,14 @@ class Settings(BaseSettings):
     qdrant_api_key: Optional[str] = None
     qdrant_collection_name: str = "multi_modal_rag"
     qdrant_prefer_grpc: bool = False
+    qdrant_hybrid: bool = True
+    qdrant_sparse_model: str = "Qdrant/bm25"
+
+    redis_url: str = "redis://localhost:6379/0"
+    redis_docstore_ttl: int = 86400
+
+    postgres_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/multimodal_rag"
+    postgres_pool_size: int = 10
 
     pdf_extraction_strategy: str = "hi_res"
     pdf_infer_table_structure: bool = True
@@ -27,7 +37,13 @@ class Settings(BaseSettings):
     pdf_new_after_n_chars: int = 6000
 
     summarization_max_concurrency: int = 5
-    retrieval_k: int = 5
+    retrieval_k: int = 10
+    retrieval_hybrid_alpha: float = 0.7
+    rerank_enabled: bool = True
+    rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    rerank_top_k: int = 5
+    query_transformer_enabled: bool = True
+    query_transformer_method: str = "hyde"
 
     model_config = {"env_prefix": "", "case_sensitive": False, "env_file": ".env", "extra": "ignore"}
 

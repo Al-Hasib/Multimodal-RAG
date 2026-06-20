@@ -70,6 +70,12 @@ class Settings(BaseSettings):
     guardrail_log_to_langfuse: bool = True
     guardrail_prompt_injection_model: str = "llama-3.1-8b-instant"
 
+    audio_transcription_provider: str = "openai"
+    audio_transcription_model: str = "whisper-1"
+    audio_transcription_language: Optional[str] = None
+    audio_chunk_seconds: int = 300
+    audio_max_file_size_mb: int = 200
+
     model_config = {"env_prefix": "", "case_sensitive": False, "env_file": ".env", "extra": "ignore"}
 
 

@@ -4,6 +4,7 @@ from typing import Optional
 from unstructured.partition.auto import partition
 from unstructured.partition.pdf import partition_pdf
 from src.config.settings import settings
+from src.ingestion.audio_processor import AudioProcessor, AUDIO_EXTENSIONS
 from src.models.schemas import ExtractedDocument, ExtractedElement, DocumentType, FileFormat
 import logging
 
@@ -19,6 +20,7 @@ URL_SCHEMES = {"http://", "https://"}
 class DocumentProcessor:
     def __init__(self):
         self.pdf_processor = PDFProcessor()
+        self.audio_processor = AudioProcessor()
 
     def detect_format(self, source: str) -> FileFormat:
         lower = source.lower()
@@ -33,6 +35,8 @@ class DocumentProcessor:
             return FileFormat.DOCX
         if ext in HTML_EXTENSIONS:
             return FileFormat.HTML
+        if ext in AUDIO_EXTENSIONS:
+            return FileFormat.AUDIO
         return FileFormat.UNKNOWN
 
     async def extract(self, source: str, file_format: Optional[FileFormat] = None) -> ExtractedDocument:
@@ -41,6 +45,8 @@ class DocumentProcessor:
 
         if fmt == FileFormat.PDF:
             return await self.pdf_processor.extract(source)
+        if fmt == FileFormat.AUDIO:
+            return await self.audio_processor.extract(source)
 
         kwargs = self._get_unstructured_kwargs(fmt)
         elements = partition(filename=source, **kwargs)
@@ -56,6 +62,9 @@ class DocumentProcessor:
             async with __import__("aiofiles").open(temp_path, "wb") as f:
                 await f.write(content)
             return await self.pdf_processor.extract(temp_path)
+
+        if fmt == FileFormat.AUDIO:
+            return await self.audio_processor.extract_from_bytes(filename, content)
 
         suffix = os.path.splitext(filename)[1] or ".bin"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:

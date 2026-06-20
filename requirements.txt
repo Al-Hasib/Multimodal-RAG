@@ -41,6 +41,10 @@ gunicorn>=23.0
 # Web UI
 streamlit>=1.42
 
+# Audio transcription
+pydub>=0.25
+openai>=1.0
+
 # Observability
 langfuse>=2.59
 python-json-logger>=3.0

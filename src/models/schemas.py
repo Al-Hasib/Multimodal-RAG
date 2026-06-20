@@ -16,6 +16,7 @@ class FileFormat(str, Enum):
     DOCX = "docx"
     HTML = "html"
     URL = "url"
+    AUDIO = "audio"
     UNKNOWN = "unknown"
 
 

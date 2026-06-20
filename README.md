@@ -70,7 +70,7 @@ prompt versioning (LangFuse), streaming, chat history (PostgreSQL), Redis cachin
 | **Production Build** | Multi-stage Dockerfile + gunicorn workers |
 | **Evaluation** | `scripts/evaluate.py` using `ragas` metrics |
 | **Document Management** | List, get, delete documents via REST API |
-| **Multi-format Ingestion** | PDF, images (JPG/PNG), DOCX, HTML, URLs |
+| **Multi-format Ingestion** | PDF, images (JPG/PNG), DOCX, HTML, URLs, audio (MP3, WAV, M4A, FLAC, OGG, AAC) |
 | **Re-index** | Wipe and re-index all documents from scratch |
 | **URL Ingestion** | `POST /ingest/url` to fetch and index web pages |
 | **Input Guardrails** | Prompt injection detection (regex + LLM), toxicity check, PII scan, topic relevance |
@@ -183,6 +183,11 @@ All settings via `.env`:
 | `GUARDRAIL_BLOCK_ON_INPUT_VIOLATION` | `true` | Block & return safe message on input violation |
 | `GUARDRAIL_BLOCK_ON_OUTPUT_VIOLATION` | `false` | Re-generate on output violation (false = flag only) |
 | `GUARDRAIL_LOG_TO_LANGFUSE` | `true` | Log violations as LangFuse traces |
+| `AUDIO_TRANSCRIPTION_PROVIDER` | `openai` | `openai` (Whisper API) or `local` (openai-whisper) |
+| `AUDIO_TRANSCRIPTION_MODEL` | `whisper-1` | Model name for provider |
+| `AUDIO_TRANSCRIPTION_LANGUAGE` | — | Optional ISO language code (e.g. `en`) |
+| `AUDIO_CHUNK_SECONDS` | `300` | Chunk size for large files (seconds) |
+| `AUDIO_MAX_FILE_SIZE_MB` | `200` | Max file size before forced chunking |
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `LOG_FORMAT` | `json` | `json` or `text` |
 

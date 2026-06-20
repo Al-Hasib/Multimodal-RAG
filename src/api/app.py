@@ -11,7 +11,11 @@ from contextlib import asynccontextmanager
 logger = logging.getLogger(__name__)
 
 _pipeline: RAGPipeline | None = None
-SUPPORTED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp", ".docx", ".doc", ".html", ".htm", ".xhtml"}
+SUPPORTED_EXTENSIONS = {
+    ".pdf", ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp",
+    ".docx", ".doc", ".html", ".htm", ".xhtml",
+    ".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".wma", ".opus",
+}
 
 
 @asynccontextmanager

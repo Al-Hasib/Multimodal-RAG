@@ -13,13 +13,14 @@ def run_api(host: str = "0.0.0.0", port: int = 8000):
 
 def run_ingest(pdf_path: str):
     pipeline = RAGPipeline()
-    pipeline.ingest(pdf_path)
+    result = pipeline.ingest(pdf_path)
     print(f"Ingested: {pdf_path}")
+    print(f"  Texts: {result['texts']}, Tables: {result['tables']}, Images: {result['images']}")
 
 
-def run_query(question: str, k: int = 5):
+def run_query(question: str, k: int = 5, session_id: str | None = None):
     pipeline = RAGPipeline()
-    result = pipeline.query(question, k=k)
+    result = pipeline.query(question, k=k, session_id=session_id)
     print(f"Answer: {result.answer}")
     if result.context_texts:
         print(f"\nSources ({len(result.context_texts)} text chunks):")
@@ -27,6 +28,12 @@ def run_query(question: str, k: int = 5):
             print(f"  - {t[:200]}...")
     if result.context_images:
         print(f"\nImages retrieved: {len(result.context_images)}")
+
+
+def run_ui():
+    import sys
+    import subprocess
+    subprocess.run([sys.executable, "-m", "streamlit", "run", "src/ui/app.py", "--server.port", "8501"])
 
 
 def main():
@@ -41,6 +48,9 @@ def main():
     query_parser = subparsers.add_parser("query", help="Ask a question")
     query_parser.add_argument("question", type=str, help="Question to ask")
     query_parser.add_argument("--k", type=int, default=5, help="Number of documents to retrieve")
+    query_parser.add_argument("--session-id", type=str, default=None, help="Session ID for chat history")
+
+    subparsers.add_parser("ui", help="Run the Streamlit web UI")
 
     args = parser.parse_args()
 
@@ -49,7 +59,9 @@ def main():
     elif args.command == "ingest":
         run_ingest(args.pdf_path)
     elif args.command == "query":
-        run_query(args.question, args.k)
+        run_query(args.question, args.k, args.session_id)
+    elif args.command == "ui":
+        run_ui()
     else:
         parser.print_help()
 

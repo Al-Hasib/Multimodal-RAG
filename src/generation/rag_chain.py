@@ -1,105 +1,169 @@
+from typing import TypedDict, Annotated, Optional
+from langgraph.graph import StateGraph, END
 from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough, RunnableLambda
-from langchain_core.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
 from src.config.settings import settings
 from src.retrieval.retriever import MultiModalRetriever
 from src.models.schemas import RetrievalResult, QueryResponse
-from typing import Optional
 import logging
 
 logger = logging.getLogger(__name__)
 
+SYSTEM_PROMPT = """You are a helpful assistant that answers questions based on the provided context.
+The context includes text, tables, and images. Use all available information to give a thorough answer.
+If the context lacks sufficient information, say so clearly. Cite specific parts of the context."""
+
 RESPONSE_TEMPLATE = """
-Answer the question based only on the following context, which can include text, tables, and the below image.
+Answer the question based only on the following context, which can include text, tables, and images.
 Context: {context_text}
 Question: {user_question}
 """
 
 
+class RAGState(TypedDict):
+    question: str
+    chat_history: list
+    transformed_queries: list[str]
+    retrieval_result: Optional[RetrievalResult]
+    context_text: str
+    context_images: list[str]
+    response: str
+    session_id: Optional[str]
+
+
+def transform_queries(state: RAGState) -> dict:
+    from src.retrieval.query_transformer import QueryTransformer
+    qt = QueryTransformer()
+    queries = qt.transform(state["question"])
+    return {"transformed_queries": queries}
+
+
+def retrieve(state: RAGState) -> dict:
+    retriever = state.get("_retriever")
+    if not retriever:
+        raise ValueError("Retriever not set in state")
+    result = retriever.retrieve(state["question"])
+    return {"retrieval_result": result}
+
+
+def build_context(state: RAGState) -> dict:
+    result = state["retrieval_result"]
+    context_text = ""
+    if result.texts:
+        for t in result.texts:
+            text = t.text if hasattr(t, "text") else (t.page_content if hasattr(t, "page_content") else str(t))
+            context_text += text + "\n\n"
+    return {
+        "context_text": context_text,
+        "context_images": result.images,
+    }
+
+
+def generate(state: RAGState) -> dict:
+    llm = ChatOpenAI(model=settings.openai_chat_model, temperature=0)
+
+    context = state["context_text"]
+    question = state["question"]
+    images = state["context_images"]
+
+    prompt_text = RESPONSE_TEMPLATE.format(context_text=context, user_question=question)
+    messages = [SystemMessage(content=SYSTEM_PROMPT)]
+
+    for msg in state.get("chat_history", []):
+        if msg["role"] == "user":
+            messages.append(HumanMessage(content=msg["content"]))
+        else:
+            messages.append(AIMessage(content=msg["content"]))
+
+    content = [{"type": "text", "text": prompt_text}]
+    for img in images:
+        content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img}"}})
+
+    messages.append(HumanMessage(content=content))
+    response = llm.invoke(messages)
+    return {"response": response.content}
+
+
 class RAGChain:
-    def __init__(self, retriever: MultiModalRetriever, model: Optional[str] = None):
+    def __init__(self, retriever: MultiModalRetriever):
         self.retriever = retriever
-        model_name = model or settings.openai_chat_model
-        self.llm = ChatOpenAI(model=model_name)
-        self.chain = self._build_chain()
-        self.chain_with_sources = self._build_chain_with_sources()
+        self.llm = ChatOpenAI(model=settings.openai_chat_model, temperature=0)
+        self.graph = self._build_graph()
 
-    def _parse_docs(self, docs):
-        return self.retriever._parse_docs(docs)
+    def _build_graph(self):
+        builder = StateGraph(RAGState)
 
-    @staticmethod
-    def _build_prompt(kwargs: dict) -> ChatPromptTemplate:
-        docs_by_type: RetrievalResult = kwargs["context"]
-        user_question = kwargs["question"]
+        builder.add_node("transform_queries", transform_queries)
+        builder.add_node("retrieve", retrieve)
+        builder.add_node("build_context", build_context)
+        builder.add_node("generate", generate)
 
-        context_text = ""
-        if docs_by_type.texts:
-            for text_element in docs_by_type.texts:
-                if hasattr(text_element, "text"):
-                    context_text += text_element.text
-                else:
-                    context_text += str(text_element)
+        builder.set_entry_point("transform_queries")
+        builder.add_edge("transform_queries", "retrieve")
+        builder.add_edge("retrieve", "build_context")
+        builder.add_edge("build_context", "generate")
+        builder.add_edge("generate", END)
 
-        prompt_text = RESPONSE_TEMPLATE.format(
-            context_text=context_text,
-            user_question=user_question,
-        )
+        return builder.compile()
 
-        prompt_content = [{"type": "text", "text": prompt_text}]
+    def invoke(self, question: str, chat_history: Optional[list] = None, session_id: Optional[str] = None) -> str:
+        initial_state = {
+            "question": question,
+            "chat_history": chat_history or [],
+            "transformed_queries": [],
+            "retrieval_result": None,
+            "context_text": "",
+            "context_images": [],
+            "response": "",
+            "session_id": session_id,
+            "_retriever": self.retriever,
+        }
+        result = self.graph.invoke(initial_state)
+        return result["response"]
 
-        if docs_by_type.images:
-            for image in docs_by_type.images:
-                prompt_content.append(
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{image}"},
-                    }
-                )
-
-        return ChatPromptTemplate.from_messages([HumanMessage(content=prompt_content)])
-
-    def _build_chain(self):
-        return (
-            {
-                "context": RunnableLambda(lambda q: self.retriever.retrieve(q)) | RunnableLambda(self._parse_docs),
-                "question": RunnablePassthrough(),
-            }
-            | RunnableLambda(self._build_prompt)
-            | self.llm
-            | StrOutputParser()
-        )
-
-    def _build_chain_with_sources(self):
-        return {
-            "context": RunnableLambda(lambda q: self.retriever.retrieve(q)) | RunnableLambda(self._parse_docs),
-            "question": RunnablePassthrough(),
-        } | RunnablePassthrough().assign(
-            response=(
-                RunnableLambda(self._build_prompt)
-                | self.llm
-                | StrOutputParser()
-            )
-        )
-
-    def invoke(self, question: str, k: int = 5) -> str:
-        logger.info(f"Generating answer for: {question}")
-        return self.chain.invoke(question)
-
-    def invoke_with_sources(self, question: str, k: int = 5) -> QueryResponse:
-        logger.info(f"Generating answer with sources for: {question}")
-        result = self.chain_with_sources.invoke(question)
+    def invoke_with_sources(self, question: str, chat_history: Optional[list] = None, k: int = 5) -> QueryResponse:
+        initial_state = {
+            "question": question,
+            "chat_history": chat_history or [],
+            "transformed_queries": [],
+            "retrieval_result": None,
+            "context_text": "",
+            "context_images": [],
+            "response": "",
+            "session_id": None,
+            "_retriever": self.retriever,
+        }
+        result = self.graph.invoke(initial_state)
 
         context_texts = []
-        for t in result["context"].texts:
-            if hasattr(t, "text"):
-                context_texts.append(t.text)
-            else:
-                context_texts.append(str(t))
+        for t in result["retrieval_result"].texts:
+            text = t.text if hasattr(t, "text") else (t.page_content if hasattr(t, "page_content") else str(t))
+            context_texts.append(text)
 
         return QueryResponse(
             answer=result["response"],
             context_texts=context_texts,
-            context_images=result["context"].images,
+            context_images=result["context_images"],
         )
+
+    async def astream(self, question: str, chat_history: Optional[list] = None, session_id: Optional[str] = None):
+        initial_state = {
+            "question": question,
+            "chat_history": chat_history or [],
+            "transformed_queries": [],
+            "retrieval_result": None,
+            "context_text": "",
+            "context_images": [],
+            "response": "",
+            "session_id": session_id,
+            "_retriever": self.retriever,
+        }
+        async for event in self.graph.astream_events(initial_state, version="v2"):
+            kind = event.get("event")
+            if kind == "on_chat_model_stream":
+                chunk = event.get("data", {}).get("chunk", {})
+                content = chunk.content if hasattr(chunk, "content") else ""
+                if content:
+                    yield content

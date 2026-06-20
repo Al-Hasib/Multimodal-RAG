@@ -1,7 +1,11 @@
 from langchain.retrievers.multi_vector import MultiVectorRetriever
 from base64 import b64decode
+from qdrant_client import QdrantClient
+from qdrant_client.models import Filter, FieldCondition, MatchValue, SearchRequest, HybridFusion, Fusion
 from src.config.settings import settings
 from src.models.schemas import RetrievalResult
+from src.retrieval.reranker import Reranker
+from src.retrieval.query_transformer import QueryTransformer
 import logging
 
 logger = logging.getLogger(__name__)
@@ -11,13 +15,64 @@ class MultiModalRetriever:
     def __init__(self, retriever: MultiVectorRetriever):
         self.retriever = retriever
         self.k = settings.retrieval_k
+        self.hybrid = settings.qdrant_hybrid
+        self.hybrid_alpha = settings.retrieval_hybrid_alpha
+        self.reranker = Reranker(model_name=settings.rerank_model) if settings.rerank_enabled else None
+        self.query_transformer = QueryTransformer()
+
+        if self.hybrid:
+            self.qdrant_client = QdrantClient(
+                url=settings.qdrant_url,
+                api_key=settings.qdrant_api_key,
+                prefer_grpc=settings.qdrant_prefer_grpc,
+            )
 
     def retrieve(self, query: str, k: int | None = None) -> RetrievalResult:
         top_k = k or self.k
         logger.info(f"Retrieving for query with k={top_k}: {query}")
 
-        docs = self.retriever.invoke(query)
-        return self._parse_docs(docs)
+        queries = self.query_transformer.transform(query)
+        all_docs = []
+
+        for q in queries:
+            if self.hybrid:
+                docs = self._hybrid_search(q, top_k)
+            else:
+                docs = self.retriever.invoke(q)
+            all_docs.extend(docs)
+
+        if self.reranker:
+            all_docs = self.reranker.rerank(query, all_docs, top_k=settings.rerank_top_k)
+
+        result = self._parse_docs(all_docs[:top_k])
+        logger.info(f"Retrieved {len(result.texts)} texts, {len(result.images)} images")
+        return result
+
+    def _hybrid_search(self, query: str, k: int) -> list:
+        from qdrant_client.models import SparseEmbedding
+        from langchain_openai import OpenAIEmbeddings
+
+        dense_vector = OpenAIEmbeddings(model=settings.openai_embedding_model).embed_query(query)
+
+        search_result = self.qdrant_client.search(
+            collection_name=settings.qdrant_collection_name,
+            query_vector=dense_vector,
+            limit=k * 2,
+        )
+        point_ids = [hit.id for hit in search_result]
+        if not point_ids:
+            return []
+
+        stored_docs = self.retriever.docstore.mget([str(pid) for pid in point_ids])
+        from langchain.schema.document import Document as LCDocument
+        docs = []
+        for sd in stored_docs:
+            if sd is not None:
+                if isinstance(sd, LCDocument):
+                    docs.append(sd)
+                else:
+                    docs.append(sd)
+        return docs
 
     def _parse_docs(self, docs) -> RetrievalResult:
         b64_images = []
@@ -28,6 +83,12 @@ class MultiModalRetriever:
                 try:
                     b64decode(doc)
                     b64_images.append(doc)
+                except Exception:
+                    texts.append(doc)
+            elif hasattr(doc, "page_content") and doc.page_content:
+                try:
+                    b64decode(doc.page_content)
+                    b64_images.append(doc.page_content)
                 except Exception:
                     texts.append(doc)
             else:

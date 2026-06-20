@@ -13,14 +13,27 @@ qdrant-client>=1.9
 langchain-qdrant>=0.1
 tiktoken>=0.5
 
-# LangChain
-langchain>=0.2
-langchain-community>=0.2
-langchain-openai>=0.1
-langchain-groq>=0.1
-langchain-core>=0.2
+# LangChain & LangGraph
+langchain>=0.3
+langchain-community>=0.3
+langchain-openai>=0.3
+langchain-groq>=0.2
+langchain-core>=0.3
+langgraph>=0.2
+
+# Re-ranking
+sentence-transformers>=3.0
+
+# Storage
+redis>=5.0
+sqlalchemy[asyncio]>=2.0
+asyncpg>=0.29
 
 # API
 fastapi>=0.100
 uvicorn>=0.20
 python-multipart>=0.0.5
+sse-starlette>=2.0
+
+# Web UI
+streamlit>=1.35

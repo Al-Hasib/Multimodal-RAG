@@ -1,12 +1,13 @@
 import uuid
-from langchain_qdrant import QdrantVectorStore
+from langchain_qdrant import QdrantVectorStore, RetrievalMode
 from langchain_openai import OpenAIEmbeddings
-from langchain.storage import InMemoryStore
 from langchain.retrievers.multi_vector import MultiVectorRetriever
 from langchain.schema.document import Document
 from src.config.settings import settings
 from src.models.schemas import ExtractedDocument, SummaryResult
+from src.storage.redis_docstore import RedisDocStore
 from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams, SparseVectorParams, SparseIndexParams, HnswConfigDiff
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,19 +18,21 @@ class VectorStoreManager:
         self.id_key = "doc_id"
         self.collection_name = settings.qdrant_collection_name
 
-        client = QdrantClient(
+        self.client = QdrantClient(
             url=settings.qdrant_url,
             api_key=settings.qdrant_api_key,
             prefer_grpc=settings.qdrant_prefer_grpc,
         )
 
+        self._ensure_collection()
+
         self.vectorstore = QdrantVectorStore(
-            client=client,
+            client=self.client,
             collection_name=self.collection_name,
             embedding=OpenAIEmbeddings(model=settings.openai_embedding_model),
         )
 
-        self.docstore = InMemoryStore()
+        self.docstore = RedisDocStore()
 
         self.retriever = MultiVectorRetriever(
             vectorstore=self.vectorstore,
@@ -37,8 +40,36 @@ class VectorStoreManager:
             id_key=self.id_key,
         )
 
+    def _ensure_collection(self):
+        collections = self.client.get_collections().collections
+        existing = [c.name for c in collections]
+
+        if self.collection_name in existing:
+            logger.info(f"Using existing Qdrant collection: {self.collection_name}")
+            return
+
+        logger.info(f"Creating Qdrant collection: {self.collection_name}")
+        self.client.create_collection(
+            collection_name=self.collection_name,
+            vectors_config=VectorParams(
+                size=1536,
+                distance=Distance.COSINE,
+            ),
+            sparse_vectors_config={
+                "sparse": SparseVectorParams(
+                    index=SparseIndexParams(
+                        on_disk=False,
+                    ),
+                ),
+            } if settings.qdrant_hybrid else None,
+            hnsw_config=HnswConfigDiff(
+                m=16,
+                ef_construct=100,
+            ),
+        )
+
     def index_document(self, document: ExtractedDocument, summaries: SummaryResult) -> None:
-        logger.info("Indexing document into Qdrant")
+        logger.info("Indexing document into Qdrant with hybrid vectors")
 
         if document.texts and summaries.text_summaries:
             doc_ids = [str(uuid.uuid4()) for _ in document.texts]

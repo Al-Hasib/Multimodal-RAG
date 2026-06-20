@@ -11,6 +11,28 @@ services:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: multimodal_rag
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
   multimodal-rag:
     build: .
     container_name: multimodal-rag
@@ -20,12 +42,18 @@ services:
       - .env
     environment:
       - QDRANT_URL=http://qdrant:6333
+      - REDIS_URL=redis://redis:6379/0
+      - POSTGRES_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/multimodal_rag
     volumes:
       - ./src:/app/src
     depends_on:
       - qdrant
+      - redis
+      - postgres
     restart: unless-stopped
     command: uvicorn src.api.app:create_app --host 0.0.0.0 --port 8000 --reload --factory
 
 volumes:
   qdrant_data:
+  redis_data:
+  postgres_data:
